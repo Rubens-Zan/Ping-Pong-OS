@@ -18,7 +18,7 @@ typedef enum  {
   COMPLETED 
 } taskStatusT;
 
-// Algumas contanstes definidas para facilitacao de leitura do codigo e debugs
+// Algumas contanstes definidas para facilitacao de leitura do codigo,debugs e manutencao
 #define DISPATCHER_ID -1 // ID do dispatcher, para facilitar na leitura dos debugs
 #define MIN_PRIORITY 20 // Lembrando que nos sistemas Windows eh o inverso, mas estou utilizando o padrao POSIX 
 #define MAX_PRIORITY -20  // e as prioridades vao de -20 a 20 no Posix

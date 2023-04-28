@@ -1,5 +1,7 @@
+# GRR20206147 Rubens Zandomenighi Laszlo 
+
 DEBUG_FLAGS = -g -DDEBUG
-CFLAGS = -std=gnu99 -Wextra -Wall
+CFLAGS = -Wall
 
 .PHONY : all debug clean purge
 
