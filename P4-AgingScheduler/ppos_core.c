@@ -43,10 +43,8 @@ task_t *scheduler(){
             biggestPriorityTask = auxQueue; 
             biggestPriorityTaskVal = currentTaskPrio;
         }
-        
 
         auxQueue = auxQueue->next;
-
     } while (auxQueue != (task_t *) readyQueue); // para que efetue o aging na cabeca da fila tambem
     
     #ifdef DEBUG
@@ -180,7 +178,7 @@ int task_switch (task_t *task){
         runningTask = task; // altera o ponteiro para a tarefa corrente da anterior para a atual
         swapcontext (&(prevTask->context), &(task->context)) ; // altera o contexto da tarefa corrente para a nova tarefa a ser a corrente, guarda o contexto anterior na tarefa anterior apontada
     }
-  return 0;
+    return 0;
 };
 
 void task_exit (int exit_code){
@@ -235,7 +233,7 @@ int task_id(){
 };
 
 void task_yield(){
-    // a tarefa volta a da fila de prontas, devolvendo o processador ao dispatcher
+    // a tarefa volta a fila de prontas, devolvendo o processador ao dispatcher
     runningTask->status = READY; 
     #ifdef DEBUG
     printf("PPOS: task_yield() Running task altered to dispatcher\n");
