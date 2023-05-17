@@ -101,6 +101,34 @@ void dispatcher(){
     task_exit(0); 
 }
 
+// Define the signal handler function with the signal number as its parameter
+void handler(int signum)
+{
+    // Check if the current task has preemption
+    if (runningTask->isInUserSpace)
+    {
+        --quantumTimer;
+
+        // Check if the task timer has reached zero or below
+        if (quantumTimer == 0)
+        {
+#ifdef DEBUG
+            debug_print("PPOS: handler()=> Task %d quantum ended. Resetting the task timer.\n", current_task->id);
+#endif
+            task_yield(); // a tarefa que estourou o quantum, volta a fila de prontas
+        }
+        else
+        {
+            // If in debug mode, print a message with the remaining task timer ticks
+    #ifdef DEBUG
+            debug_print("PPOS: handler()=> Task %d still has %d ticks.\n", current_task->id, quantumTimer);
+    #endif
+            // Continue executing the current task
+            return;
+        }
+    }
+}
+
 void timer_init()
 {
     // Assign the 'handler' function as the signal handler for the action struct
@@ -136,32 +164,7 @@ void timer_init()
 }
 
 
-// Define the signal handler function with the signal number as its parameter
-void handler(int signum)
-{
-    // Check if the current task has preemption
-    if (runningTask->isInUserSpace)
-    {
-        --quantumTimer;
-        // Check if the task timer has reached zero or below
-        if (quantumTimer == 0)
-        {
-#ifdef DEBUG
-            debug_print("PPOS: handler()=> Task %d quantum ended. Resetting the task timer.\n", current_task->id);
-#endif
-            task_yield(); // a tarefa que estourou o quantum, volta a fila de prontas
-        }
-        else
-        {
-            // If in debug mode, print a message with the remaining task timer ticks
-    #ifdef DEBUG
-            debug_print("PPOS: handler()=> Task %d still has %d ticks.\n", current_task->id, quantumTimer);
-    #endif
-            // Continue executing the current task
-            return;
-        }
-    }
-}
+
 
 
 void ppos_init (){
@@ -216,7 +219,7 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
     if (task != &dispatcherTask){
         task->id = taskCounter; 
         task->dynamicPriority = task->staticPriority =DEFAULT_PRIORITY;
-        task->isInUserSpace = 0; // como eh o dispatcher esta em tarefa de modo kernel, ou seja, nao preemptiva
+        task->isInUserSpace = 1; // como eh o dispatcher esta em tarefa de modo kernel, ou seja, nao preemptiva
         ++taskCounter; // Incrementa contador para que a task inicializada seja a ultima
         ++remainingTasks; 
         queue_append(&readyQueue, (queue_t *) task);  // aqui pode usar a task e fazer o cast pois os primeiros tres campos da estrutura da task sao os mesmo do queue_t
@@ -224,7 +227,7 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
         task->id = DISPATCHER_ID; // Serve para debugs
         task->staticPriority = MAX_PRIORITY; // Dispatcher eh o mais prioritario 
         task->dynamicPriority = MAX_PRIORITY;
-        task->isInUserSpace = 1;
+        task->isInUserSpace = 0;
     }
 
     makecontext(&(task->context), (void (*)(void))start_func, 1, arg); // inicia o contexto da tarefa com a funcao indicada e argumentos recebidos
