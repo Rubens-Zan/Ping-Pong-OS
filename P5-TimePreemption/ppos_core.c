@@ -113,7 +113,7 @@ void handler(int signum)
         if (quantumTimer == 0)
         {
 #ifdef DEBUG
-            debug_print("PPOS: handler()=> Task %d quantum ended. Resetting the task timer.\n", current_task->id);
+            printf("PPOS: handler()=> Task %d quantum ended. Resetting the task timer.\n", runningTask->id);
 #endif
             task_yield(); // a tarefa que estourou o quantum, volta a fila de prontas
         }
@@ -121,7 +121,7 @@ void handler(int signum)
         {
             // If in debug mode, print a message with the remaining task timer ticks
     #ifdef DEBUG
-            debug_print("PPOS: handler()=> Task %d still has %d ticks.\n", current_task->id, quantumTimer);
+            printf("PPOS: handler()=> Task %d still has %d ticks.\n", runningTask->id, quantumTimer);
     #endif
             // Continue executing the current task
             return;
