@@ -36,7 +36,7 @@ typedef struct task_t
   short staticPriority, dynamicPriority;
   short isInUserSpace; // indica se eh uma tarefa do espaço do usuario para ser preemptada ou nao
   unsigned int processorTime;
-  unsigned int executionTIme;
+  unsigned int executionTime;
   unsigned int activations;
   // ... (outros campos serão adicionados mais tarde)
 } task_t ;

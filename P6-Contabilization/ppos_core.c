@@ -227,8 +227,8 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
     }
     task->activations=0;
     task->processorTime=0;
-    task->executionTIme = systime();
-    // printf("execucao:: %d %d\n",task->executionTIme, clockTicks);
+    task->executionTime = systime();
+    // printf("execucao:: %d %d\n",task->executionTime, clockTicks);
     makecontext(&(task->context), (void (*)(void))start_func, 1, arg); // inicia o contexto da tarefa com a funcao indicada e argumentos recebidos
 
 
@@ -257,13 +257,13 @@ int task_switch (task_t *task){
 };
 
 void task_exit (int exit_code){
-    // printf("runningTask->executionTIme %d %d \n",runningTask->executionTIme,runningTask->id);
-    runningTask->executionTIme = systime() - runningTask->executionTIme;
+    // printf("runningTask->executionTime %d %d \n",runningTask->executionTime,runningTask->id);
+    runningTask->executionTime = systime() - runningTask->executionTime;
     if (runningTask->id == DISPATCHER_ID){
-        printf("Dispatcher task exit: execution time %d ms,processor time %d ms, %d activations \n", runningTask->executionTIme, runningTask->processorTime,runningTask->activations);
+        printf("Dispatcher task exit: execution time %d ms,processor time %d ms, %d activations \n", runningTask->executionTime, runningTask->processorTime,runningTask->activations);
 
     }else{
-        printf("Task %d exit: execution time %d ms,processor time %d ms, %d activations \n",runningTask->id, runningTask->executionTIme, runningTask->processorTime,runningTask->activations);
+        printf("Task %d exit: execution time %d ms,processor time %d ms, %d activations \n",runningTask->id, runningTask->executionTime, runningTask->processorTime,runningTask->activations);
 
     }
 
