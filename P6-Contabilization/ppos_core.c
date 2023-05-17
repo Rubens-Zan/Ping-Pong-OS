@@ -11,15 +11,14 @@ task_t *runningTask,mainTask, dispatcherTask; // ponteiro para a tarefa corrente
 queue_t *readyQueue; 
 unsigned int taskCounter; // contador para inicializacao das tarefas
 unsigned int remainingTasks; // contador para tarefas restantes
-short quantumTimer; // contador de quantum para a tarefa corrente
+unsigned int quantumTimer; // contador de quantum para a tarefa corrente
+
+unsigned int clockTicks; // Variavel que conta tick do relogio decorridos (tempo em ms)
+
+struct sigaction action; // estrutura que define um tratador de sinal (deve ser global ou static)
+struct itimerval timer;  // estrutura que define um timer
 
 
-// Aditional structs needed to use preemption
-struct sigaction action; // Struct Action used
-struct itimerval timer;  // Struct Timer used
-
-
-// Function to print the queue element 'object'
 void print_queue_element(void *ptr)
 {
     task_t *task = ptr;
@@ -101,67 +100,65 @@ void dispatcher(){
     task_exit(0); 
 }
 
-void timer_init()
+
+// Returns current time of the system
+unsigned int systime()
 {
-    // Assign the 'handler' function as the signal handler for the action struct
-    action.sa_handler = handler; // faz com que a funcao de handler lide com as interrupcoes 
-    // Initialize the action.sa_mask set to be an empty set
-    sigemptyset(&action.sa_mask);
-    // Set the flags of the action struct to 0
-    action.sa_flags = 0;
-    // Set up the signal handler for SIGALRM using the action struct and check if the sigaction call is successful
-    if (sigaction(SIGALRM, &action, 0) < 0)
-    {
-        // If the sigaction call fails, print an error message
-        perror("ERROR: ppos_init()=> Error on sigaction!\n");
-        // Exit with error code
-        exit(1);
-    }
-    // Set the initial timer value for the microsecond field
-    timer.it_value.tv_usec = HANDLER_FREQUENCY;
-    // Set the initial timer value for the second field
-    timer.it_value.tv_sec = 0;
-    // Set the timer interval value for the microsecond field
-    timer.it_interval.tv_usec = HANDLER_FREQUENCY; // EXECUTA A FUNCAO DE HANDLE 1000x por segundo
-    // Set the timer interval value for the second field
-    timer.it_interval.tv_sec = 0;
-    // Set the timer using the ITIMER_REAL timer type and the timer struct and check if the setitimer call is successful
-    if (setitimer(ITIMER_REAL, &timer, 0) < 0)
-    {
-        // If the setitimer call fails, print an error message
-        perror("ERROR: ppos_init()=> Error on settimer!\n");
-        // Exit with error code
-        exit(1);
-    }
+    return clockTicks;
 }
 
-
-// Define the signal handler function with the signal number as its parameter
-void handler(int signum)
+void tickHandler(int signum)
 {
+    ++runningTask->processorTime;
+    ++clockTicks;
+
+    
     // Check if the current task has preemption
     if (runningTask->isInUserSpace)
     {
         --quantumTimer;
+
         // Check if the task timer has reached zero or below
         if (quantumTimer == 0)
         {
-#ifdef DEBUG
-            debug_print("PPOS: handler()=> Task %d quantum ended. Resetting the task timer.\n", current_task->id);
-#endif
+        #ifdef DEBUG
+            printf("PPOS: tickHandler() Task %d quantum ended. Resetting the task timer.\n", runningTask->id);
+        #endif
             task_yield(); // a tarefa que estourou o quantum, volta a fila de prontas
         }
         else
         {
-            // If in debug mode, print a message with the remaining task timer ticks
-    #ifdef DEBUG
-            debug_print("PPOS: handler()=> Task %d still has %d ticks.\n", current_task->id, quantumTimer);
-    #endif
-            // Continue executing the current task
+        #ifdef DEBUG
+            // printf("PPOS: tickHandler() Task %d still has %d ticks.\n", runningTask->id, quantumTimer);
+        #endif
             return;
         }
     }
 }
+
+void timer_init()
+{
+    action.sa_handler = tickHandler; // faz com que a funcao de tickHandler lide com as interrupcoes 
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = 0;
+    if (sigaction(SIGALRM, &action, 0) < 0)
+    {
+        perror("ERROR: ppos_init()=> Error on sigaction!\n");
+        exit(1);
+    }
+    timer.it_value.tv_usec = HANDLER_FREQUENCY;
+    timer.it_value.tv_sec = 0;
+    timer.it_interval.tv_usec = HANDLER_FREQUENCY; 
+    timer.it_interval.tv_sec = 0;
+    if (setitimer(ITIMER_REAL, &timer, 0) < 0)
+    {
+        perror("ERROR: ppos_init()=> Error on settimer!\n");
+        exit(1);
+    }
+}
+
+
+
 
 
 void ppos_init (){
@@ -177,15 +174,17 @@ void ppos_init (){
 
     taskCounter = 0; // garantindo que o id da main sera sempre 0 
     mainTask.id = taskCounter; 
+    mainTask.activations = 1;
     remainingTasks = 1;
     ++taskCounter; 
-    timer_init(); // inicia o timer 
     queue_append(&readyQueue, (queue_t *) &mainTask);
-
+    clockTicks=0;
     #ifdef DEBUG
     printf("PPOS: System initialized \n");
     #endif
     runningTask = &mainTask;
+
+    timer_init(); // inicia a contabilizacao de tempo 
     task_init(&dispatcherTask, dispatcher, NULL);
 }
 
@@ -216,17 +215,20 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
     if (task != &dispatcherTask){
         task->id = taskCounter; 
         task->dynamicPriority = task->staticPriority =DEFAULT_PRIORITY;
-        task->isInUserSpace = 0; // como eh o dispatcher esta em tarefa de modo kernel, ou seja, nao preemptiva
+        task->isInUserSpace = 1; // como eh o dispatcher esta em tarefa de modo kernel, ou seja, nao preemptiva
         ++taskCounter; // Incrementa contador para que a task inicializada seja a ultima
         ++remainingTasks; 
-        queue_append(&readyQueue, (queue_t *) task);  // aqui pode usar a task e fazer o cast pois os primeiros tres campos da estrutura da task sao os mesmo do queue_t
+        queue_append(&readyQueue, (queue_t *) task);  // aqui pode usar a task e fazer o cast pois os primeiros tres campos da estrutura da task sao os mesmo do queue_t    
     }else {
         task->id = DISPATCHER_ID; // Serve para debugs
         task->staticPriority = MAX_PRIORITY; // Dispatcher eh o mais prioritario 
         task->dynamicPriority = MAX_PRIORITY;
-        task->isInUserSpace = 1;
+        task->isInUserSpace = 0;
     }
-
+    task->activations=0;
+    task->processorTime=0;
+    task->executionTIme = systime();
+    // printf("execucao:: %d %d\n",task->executionTIme, clockTicks);
     makecontext(&(task->context), (void (*)(void))start_func, 1, arg); // inicia o contexto da tarefa com a funcao indicada e argumentos recebidos
 
 
@@ -243,6 +245,7 @@ int task_switch (task_t *task){
         task->status = RUNNING; // a tarefa que vai entrar em execucao recebe o status de em execucao 
         prevTask->dynamicPriority = prevTask->staticPriority;
         task->dynamicPriority = task->staticPriority;
+        ++task->activations;
         quantumTimer = QUANTUM_TIME; /// RESETA QUANTUM PARA A NOVA TAREFA A EXECUTAR
         #ifdef DEBUG
         printf("PPOS: task_switch() Running task switched %d -> %d\n", runningTask->id,task->id);
@@ -254,7 +257,17 @@ int task_switch (task_t *task){
 };
 
 void task_exit (int exit_code){
-    
+    // printf("runningTask->executionTIme %d %d \n",runningTask->executionTIme,runningTask->id);
+    runningTask->executionTIme = systime() - runningTask->executionTIme;
+    if (runningTask->id == DISPATCHER_ID){
+        printf("Dispatcher task exit: execution time %d ms,processor time %d ms, %d activations \n", runningTask->executionTIme, runningTask->processorTime,runningTask->activations);
+
+    }else{
+        printf("Task %d exit: execution time %d ms,processor time %d ms, %d activations \n",runningTask->id, runningTask->executionTIme, runningTask->processorTime,runningTask->activations);
+
+    }
+
+
     if (runningTask != &dispatcherTask){
 
         // removo no task exit, para que quando o dispatcher rode o scheduler, a main ja nao esteja na fila 
@@ -276,6 +289,8 @@ void task_exit (int exit_code){
 
         exit(EXIT_SUCCESS);
     }
+    
+
 
 };
 
