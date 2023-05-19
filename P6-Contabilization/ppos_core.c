@@ -101,24 +101,25 @@ void dispatcher(){
 }
 
 
-// Returns current time of the system
+// Retorna a quantidade de ticks do relogio do sistema
 unsigned int systime()
 {
     return clockTicks;
 }
 
+// Funcao que lida com um tick do relogio do sistema
 void tickHandler(int signum)
 {
     ++runningTask->processorTime;
     ++clockTicks;
 
     
-    // Check if the current task has preemption
+    // Checa se a tarefa corrente esta no userspace, pois se for tarefa do kernel, nao deve ter controle de preempcao
     if (runningTask->isInUserSpace)
     {
         --quantumTimer;
 
-        // Check if the task timer has reached zero or below
+        // Se o quantum da tarefa acabou
         if (quantumTimer == 0)
         {
         #ifdef DEBUG
@@ -129,9 +130,8 @@ void tickHandler(int signum)
         else
         {
         #ifdef DEBUG
-            // printf("PPOS: tickHandler() Task %d still has %d ticks.\n", runningTask->id, quantumTimer);
+            // printf("PPOS: tickHandler() Task %d still has %d ticks.\n", runningTask->id, quantumTimer); // printa o quantum da tarefa decrementando, polui muito o log, portanto deixei comentado
         #endif
-            return;
         }
     }
 }
@@ -214,8 +214,8 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
     task->status = READY; // atribui status de pronta para executar a tarefa criada
     if (task != &dispatcherTask){
         task->id = taskCounter; 
-        task->dynamicPriority = task->staticPriority =DEFAULT_PRIORITY;
-        task->isInUserSpace = 1; // como eh o dispatcher esta em tarefa de modo kernel, ou seja, nao preemptiva
+        task->dynamicPriority = task->staticPriority = DEFAULT_PRIORITY;
+        task->isInUserSpace = 1; // como nao eh o dispatcher esta em tarefa de modo kernel, ou seja, nao preemptiva
         ++taskCounter; // Incrementa contador para que a task inicializada seja a ultima
         ++remainingTasks; 
         queue_append(&readyQueue, (queue_t *) task);  // aqui pode usar a task e fazer o cast pois os primeiros tres campos da estrutura da task sao os mesmo do queue_t    
@@ -227,8 +227,7 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
     }
     task->activations=0;
     task->processorTime=0;
-    task->executionTime = systime();
-    // printf("execucao:: %d %d\n",task->executionTime, clockTicks);
+    task->executionTime = systime(); // inicio o tempo de execucao com a quantidade de ticks atuais do relogio, para que quando morrer faca execucao = tempo_morte - tempo_nascimento
     makecontext(&(task->context), (void (*)(void))start_func, 1, arg); // inicia o contexto da tarefa com a funcao indicada e argumentos recebidos
 
 
@@ -257,7 +256,6 @@ int task_switch (task_t *task){
 };
 
 void task_exit (int exit_code){
-    // printf("runningTask->executionTime %d %d \n",runningTask->executionTime,runningTask->id);
     runningTask->executionTime = systime() - runningTask->executionTime;
     if (runningTask->id == DISPATCHER_ID){
         printf("Dispatcher task exit: execution time %d ms,processor time %d ms, %d activations \n", runningTask->executionTime, runningTask->processorTime,runningTask->activations);
@@ -289,9 +287,6 @@ void task_exit (int exit_code){
 
         exit(EXIT_SUCCESS);
     }
-    
-
-
 };
 
 
