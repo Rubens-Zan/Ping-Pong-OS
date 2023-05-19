@@ -146,9 +146,9 @@ void timer_init()
         perror("ERROR: ppos_init()=> Error on sigaction!\n");
         exit(1);
     }
-    timer.it_value.tv_usec = HANDLER_FREQUENCY;
+    timer.it_value.tv_usec = TICK_HANDLER_FREQUENCY; // seta o valor da proxima expiracao com o TICK_HANDLER_FREQUENCY
+    timer.it_interval.tv_usec = TICK_HANDLER_FREQUENCY; // seta o valor do intervalo a ser executa com o mesmo tempoo, para ser executado de 1ms em 1ms 
     timer.it_value.tv_sec = 0;
-    timer.it_interval.tv_usec = HANDLER_FREQUENCY; 
     timer.it_interval.tv_sec = 0;
     if (setitimer(ITIMER_REAL, &timer, 0) < 0)
     {
@@ -272,7 +272,7 @@ void task_exit (int exit_code){
         queue_remove(&readyQueue,(queue_t *) runningTask); // caso a tarefa foi completa remove da fila de prontas
         --remainingTasks; 
 
-        runningTask->status = COMPLETED; // como estamos tratando de uma politica FCFS colaborativa, o estado da tarefa vai ser completa
+        runningTask->status = COMPLETED; // caso deu task_exit quer dizer que a tarefa terminou 
         #ifdef DEBUG
         printf("PPOS: task_exit() Running task %d exited with code %d, returning to dispatcher \n", runningTask->id, exit_code);
         #endif

@@ -25,7 +25,8 @@ typedef enum  {
 #define TASK_AGING -1 // Fator de envelhecimento das tarefas 
 #define DEFAULT_PRIORITY 0 // Definindo a prioridade inicial das tarefas como padrao de 0
 #define QUANTUM_TIME 20 // O quantum das tarefas eh de 20 ticks de relogio
-#define HANDLER_FREQUENCY 1000
+#define TICK_HANDLER_FREQUENCY 1000 // tempo para chamada da funcao que lida com ticks do relogio em microsegundos, por referencia 1000 microsegundos = 1 milisegundo 
+
 // Estrutura que define um Task Control Block (TCB)
 typedef struct task_t
 {
