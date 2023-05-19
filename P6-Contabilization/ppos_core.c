@@ -143,8 +143,8 @@ void timer_init()
     action.sa_flags = 0;
     if (sigaction(SIGALRM, &action, 0) < 0)
     {
-        perror("ERROR: ppos_init()=> Error on sigaction!\n");
-        exit(1);
+        perror("ERROR: timer_init() Error while testing sigaction\n");
+        exit(EXIT_FAILURE);
     }
     timer.it_value.tv_usec = TICK_HANDLER_FREQUENCY; // seta o valor da proxima expiracao com o TICK_HANDLER_FREQUENCY
     timer.it_interval.tv_usec = TICK_HANDLER_FREQUENCY; // seta o valor do intervalo a ser executa com o mesmo tempoo, para ser executado de 1ms em 1ms 
@@ -152,8 +152,8 @@ void timer_init()
     timer.it_interval.tv_sec = 0;
     if (setitimer(ITIMER_REAL, &timer, 0) < 0)
     {
-        perror("ERROR: ppos_init()=> Error on settimer!\n");
-        exit(1);
+        perror("ERROR: timer_init() Error on setting timer\n");
+        exit(EXIT_FAILURE);
     }
 }
 
