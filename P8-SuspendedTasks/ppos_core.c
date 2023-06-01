@@ -9,9 +9,7 @@
 
 task_t *runningTask,mainTask, dispatcherTask; // ponteiro para a tarefa corrente e para a main
 queue_t *readyQueue; 
-queue_t *suspendedQueue; 
-
-unsigned int taskCounter; // contador para inicializacao das tarefas
+int taskCounter; // contador para inicializacao das tarefas
 unsigned int remainingTasks; // contador para tarefas restantes
 unsigned int quantumTimer; // contador de quantum para a tarefa corrente
 
@@ -32,35 +30,31 @@ void print_queue_element(void *ptr)
 
 // Funcao para escalonamento da tarefa utilizando a politica por prioridades
 task_t *scheduler(){
-    task_t *biggestPriorityTask;
+    task_t *biggestPriorityTask = (task_t *) readyQueue;
+    int biggestPriorityTaskVal =  biggestPriorityTask->dynamicPriority;
+    task_t *auxQueue = (task_t *) readyQueue; // inicio com a tarefa corrente, para que possa comparar e efetuar a troca de contexto apenas quando a prioridade for 'mais alta'
+    
+    // percorre a fila de tarefas prontas para achar a mais prioritaria, ja as envelhecendo
+    do{ 
+        int currentTaskPrio = auxQueue->dynamicPriority;
 
-    if (readyQueue){ // se tem alguem na fila de prontas
-        biggestPriorityTask = (task_t *) readyQueue;
-        int biggestPriorityTaskVal =  biggestPriorityTask->dynamicPriority;
-        task_t *auxQueue = (task_t *) readyQueue; // inicio com a tarefa corrente, para que possa comparar e efetuar a troca de contexto apenas quando a prioridade for 'mais alta'
-        
-        // percorre a fila de tarefas prontas para achar a mais prioritaria, ja as envelhecendo
-        do{ 
-            int currentTaskPrio = auxQueue->dynamicPriority;
-
-            if (currentTaskPrio != MAX_PRIORITY){
-                if (currentTaskPrio + TASK_AGING < MAX_PRIORITY){
-                    auxQueue->dynamicPriority = MAX_PRIORITY;
-                }
-                else {
-                    auxQueue->dynamicPriority = currentTaskPrio + TASK_AGING;
-                }
+        if (currentTaskPrio != MAX_PRIORITY){
+            if (currentTaskPrio + TASK_AGING < MAX_PRIORITY){
+                auxQueue->dynamicPriority = MAX_PRIORITY;
             }
-            
-            if (biggestPriorityTaskVal > currentTaskPrio ){ // a comparacao eh maior aqui pois quanto menor o numero da prioridade, mais prioritario eh a tarefa 
-                biggestPriorityTask = auxQueue; 
-                biggestPriorityTaskVal = currentTaskPrio;
+            else {
+                auxQueue->dynamicPriority = currentTaskPrio + TASK_AGING;
             }
-
-            auxQueue = auxQueue->next;
-        } while (auxQueue != (task_t *) readyQueue); // para que efetue o aging na cabeca da fila tambem
+        }
         
-    }
+        if (biggestPriorityTaskVal > currentTaskPrio ){ // a comparacao eh maior aqui pois quanto menor o numero da prioridade, mais prioritario eh a tarefa 
+            biggestPriorityTask = auxQueue; 
+            biggestPriorityTaskVal = currentTaskPrio;
+        }
+
+        auxQueue = auxQueue->next;
+    } while (auxQueue != (task_t *) readyQueue); // para que efetue o aging na cabeca da fila tambem
+    
     #ifdef DEBUG
         queue_print("PPOS: scheduler() Queue of ready tasks: ", (queue_t *)readyQueue, print_queue_element); // interessante para ver o funcionamento e task aging das tarefas
         printf("PPOS: scheduler() Task with biggest priority: %d \n",biggestPriorityTask->id);
@@ -95,6 +89,7 @@ void dispatcher(){
                 break;
             case RUNNING:
             case SUSPENDED:
+                /* code */
                 break;
             default: 
                 break;
@@ -102,12 +97,6 @@ void dispatcher(){
         }
     }
     
-    dispatcherTask.status = SUSPENDED;
-    
-    if(remainingTasks == 0){
-
-    }
-
     task_exit(0); 
 }
 
@@ -123,13 +112,11 @@ void tickHandler(int signum)
 {
     ++runningTask->processorTime;
     ++clockTicks;
-
-    
     // Checa se a tarefa corrente esta no userspace, pois se for tarefa do kernel, nao deve ter controle de preempcao
     if (runningTask->isInUserSpace)
     {
         --quantumTimer;
-
+        
         // Se o quantum da tarefa acabou
         if (quantumTimer == 0)
         {
@@ -140,9 +127,9 @@ void tickHandler(int signum)
         }
         else
         {
-        // #ifdef DEBUG
-        //     // printf("PPOS: tickHandler() Task %d still has %d ticks.\n", runningTask->id, quantumTimer); // printa o quantum da tarefa decrementando, polui muito o log, portanto deixei comentado
-        // #endif
+        #ifdef DEBUG
+            // printf("PPOS: tickHandler() Task %d still has %d ticks.\n", runningTask->id, quantumTimer); // printa o quantum da tarefa decrementando, polui muito o log, portanto deixei comentado
+        #endif
         }
     }
 }
@@ -182,17 +169,20 @@ void ppos_init (){
     taskCounter = 0; // garantindo que o id da main sera sempre 0 
     mainTask.id = taskCounter; 
     mainTask.activations = 1;
+    mainTask.isInUserSpace = 1;
+    quantumTimer = QUANTUM_TIME; /// RESETA QUANTUM PARA A NOVA TAREFA A EXECUTAR
+
     remainingTasks = 1;
     ++taskCounter; 
     queue_append(&readyQueue, (queue_t *) &mainTask);
     clockTicks=0;
-    // #ifdef DEBUG
-    // printf("PPOS: System initialized \n");
-    // #endif
+    #ifdef DEBUG
+    printf("PPOS: System initialized \n");
+    #endif
     runningTask = &mainTask;
 
-    task_init(&dispatcherTask, dispatcher, NULL);
     timer_init(); // inicia a contabilizacao de tempo 
+    task_init(&dispatcherTask, dispatcher, NULL);
 }
 
 
@@ -219,19 +209,18 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
     }
 
     task->status = READY; // atribui status de pronta para executar a tarefa criada
-    if (task != &dispatcherTask){
+    if (taskCounter != 1){ // se a tarefa nao eh o dispatcher
         task->dynamicPriority = task->staticPriority = DEFAULT_PRIORITY;
         task->isInUserSpace = 1; // como nao eh o dispatcher esta em tarefa de modo kernel, ou seja, nao preemptiva
         ++remainingTasks; 
         queue_append(&readyQueue, (queue_t *) task);  // aqui pode usar a task e fazer o cast pois os primeiros tres campos da estrutura da task sao os mesmo do queue_t    
-    }else {
+    } else {
         task->staticPriority = MAX_PRIORITY; // Dispatcher eh o mais prioritario 
         task->dynamicPriority = MAX_PRIORITY;
         task->isInUserSpace = 0;
     }
     task->id = taskCounter; 
     ++taskCounter; // Incrementa contador para que a task inicializada seja a ultima
-
     task->activations=0;
     task->processorTime=0;
     task->executionTime = systime(); // inicio o tempo de execucao com a quantidade de ticks atuais do relogio, para que quando morrer faca execucao = tempo_morte - tempo_nascimento
@@ -245,23 +234,6 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
     return task->id;
 } ;
 
-int task_switch (task_t *task){
-    task_t *prevTask = runningTask; // guarda em variavel auxiliar a tarefa corrente que vai ser a anterior para que consiga alterar o ptr da tarefa corrente para a nova tarefa
-    if (runningTask != task){
-        task->status = RUNNING; // a tarefa que vai entrar em execucao recebe o status de em execucao 
-        prevTask->dynamicPriority = prevTask->staticPriority;
-        task->dynamicPriority = task->staticPriority;
-        ++task->activations;
-        quantumTimer = QUANTUM_TIME; /// RESETA QUANTUM PARA A NOVA TAREFA A EXECUTAR
-        // #ifdef DEBUG
-        // printf("PPOS: task_switch() Running task switched %d -> %d\n", runningTask->id,task->id);
-        // #endif
-        runningTask = task; // altera o ponteiro para a tarefa corrente da anterior para a atual
-        swapcontext (&(prevTask->context), &(task->context)) ; // altera o contexto da tarefa corrente para a nova tarefa a ser a corrente, guarda o contexto anterior na tarefa anterior apontada
-    }
-    return 0;
-};
-
 void task_resume (task_t * task, task_t **queue){
     // se a fila queue não for nula, retira a tarefa apontada por task dessa fila;
     if(queue != NULL)
@@ -273,7 +245,6 @@ void task_resume (task_t * task, task_t **queue){
     queue_append(&readyQueue, (queue_t *) task); 
 };
 
-// 
 void task_suspend (task_t **queue){
     #ifdef DEBUG
     printf("PPOS: task_suspend() Suspending task %d \n", runningTask->id);
@@ -300,52 +271,70 @@ int task_wait (task_t *task){
     return task->id;
 }
 
+int task_switch (task_t *task){
+    task_t *prevTask = runningTask; // guarda em variavel auxiliar a tarefa corrente que vai ser a anterior para que consiga alterar o ptr da tarefa corrente para a nova tarefa
+    if (runningTask != task){
+        task->status = RUNNING; // a tarefa que vai entrar em execucao recebe o status de em execucao 
+        prevTask->dynamicPriority = prevTask->staticPriority;
+        task->dynamicPriority = task->staticPriority;
+        ++task->activations;
+        quantumTimer = QUANTUM_TIME; /// RESETA QUANTUM PARA A NOVA TAREFA A EXECUTAR
+        #ifdef DEBUG
+        printf("PPOS: task_switch() Running task switched %d -> %d\n", runningTask->id,task->id);
+        #endif
+        runningTask = task; // altera o ponteiro para a tarefa corrente da anterior para a atual
+        swapcontext (&(prevTask->context), &(task->context)) ; // altera o contexto da tarefa corrente para a nova tarefa a ser a corrente, guarda o contexto anterior na tarefa anterior apontada
+    }
+    return 0;
+};
+
 void task_exit (int exit_code){
     runningTask->executionTime = systime() - runningTask->executionTime;
     printf("Task %d exit: execution time %d ms,processor time %d ms, %d activations \n",runningTask->id, runningTask->executionTime, runningTask->processorTime,runningTask->activations);
 
+    if (runningTask->awaitingTasksQueue){ // se tem alguem na fila de aguardando fim dessa tarefa
+        task_t *auxQueue = (task_t *) runningTask->awaitingTasksQueue;
+        task_t *auxQueueNext;
+        task_t *start = auxQueue;
+        do{ 
+            auxQueueNext = auxQueue->next; 
+            task_resume(auxQueue,&runningTask->awaitingTasksQueue); 
+            auxQueue = auxQueueNext;
+        } while (auxQueue != start ); // para que efetue o loop na cabeca da fila tambem
+    }   
+
     if (runningTask != &dispatcherTask){
 
-        if (runningTask->awaitingTasksQueue){ // se tem alguem na fila de aguardando fim dessa tarefa
-            task_t *auxQueue = (task_t *) runningTask->awaitingTasksQueue;
-            task_t *auxQueueNext;
-            task_t *start = auxQueue;
-            do{ 
-                auxQueueNext = auxQueue->next; 
-                task_resume(auxQueue,&runningTask->awaitingTasksQueue); 
-                auxQueue = auxQueueNext;
-            } while (auxQueue != start ); // para que efetue o loop na cabeca da fila tambem
-            
-        }
         // removo no task exit, para que quando o dispatcher rode o scheduler, a main ja nao esteja na fila 
         queue_remove(&readyQueue,(queue_t *) runningTask); // caso a tarefa foi completa remove da fila de prontas
         --remainingTasks; 
 
         runningTask->status = COMPLETED; // caso deu task_exit quer dizer que a tarefa terminou 
-        // #ifdef DEBUG
-        // printf("PPOS: task_exit() Running task %d exited with code %d, returning to dispatcher \n", runningTask->id, exit_code);
-        // #endif
+        #ifdef DEBUG
+        printf("PPOS: task_exit() Running task %d exited with code %d, returning to dispatcher \n", runningTask->id, exit_code);
+        #endif
         task_switch(&dispatcherTask) ; // tarefa encerrada, controle volta para o dispatcher 
         free(runningTask->context.uc_stack.ss_sp); // limpa a stack alocada a tarefa
 
     }else {
-        // #ifdef DEBUG
-        // printf("PPOS: task_exit() Dispatcher task terminated \n");
-        // #endif   
+        #ifdef DEBUG
+        printf("PPOS: task_exit() Dispatcher task terminated \n");
+        #endif   
         free(runningTask->context.uc_stack.ss_sp); // limpa a stack alocada a tarefa
 
         exit(EXIT_SUCCESS);
     }
 };
 
+
 int task_getprio (task_t *task){
     return (task != NULL ? task->staticPriority : runningTask->staticPriority); 
 }
 
 void task_setprio (task_t *task, int prio){
-    // #ifdef DEBUG
-    // printf("PPOS: task_setprio() Task %d received priority %d \n", task->id, prio);
-    // #endif
+    #ifdef DEBUG
+    printf("PPOS: task_setprio() Task %d received priority %d \n", task->id, prio);
+    #endif
     if (! (prio >= MAX_PRIORITY && prio <= MIN_PRIORITY)){
         fprintf(stderr, "ERRO: A prioridade esta fora dos limites devidos!\n");  // Caso a prioridade passada, nao estiver entre -20 e 20 retorna erro
         exit(EXIT_FAILURE);
@@ -357,6 +346,7 @@ void task_setprio (task_t *task, int prio){
         runningTask->staticPriority = runningTask->dynamicPriority = prio; 
 }
 
+
 int task_id(){
     return runningTask->id; 
 };
@@ -364,9 +354,9 @@ int task_id(){
 void task_yield(){
     // a tarefa volta a fila de prontas, devolvendo o processador ao dispatcher
     runningTask->status = READY; 
-    // #ifdef DEBUG
-    // printf("PPOS: task_yield() Running task altered to dispatcher\n");
-    // #endif
+    #ifdef DEBUG
+    printf("PPOS: task_yield() Running task altered to dispatcher\n");
+    #endif
     task_switch(&dispatcherTask); 
 }
 
