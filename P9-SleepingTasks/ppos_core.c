@@ -9,7 +9,7 @@
 
 task_t *runningTask,mainTask, dispatcherTask; // ponteiro para a tarefa corrente e para a main
 queue_t *readyQueue; 
-queue_t *suspendedQueue;
+task_t *suspendedQueue;
 int taskCounter; // contador para inicializacao das tarefas
 unsigned int remainingTasks; // contador para tarefas restantes
 unsigned int quantumTimer; // contador de quantum para a tarefa corrente
@@ -29,51 +29,64 @@ void print_queue_element(void *ptr)
     }
 }
 
+// Loop na lista de filas suspensas e ve se ja chegou o tempo do alarme delas acordarem
 void task_awake(){
-    if (suspendedQueue){ // se tem alguem na fila de aguardando alarme de acordar
-        task_t *auxQueue = (task_t *) suspendedQueue;
-        task_t *auxQueueNext;
-        task_t *start = auxQueue;
-        do{ 
-            auxQueueNext = auxQueue->next;
-            if (auxQueue->alarmTime >= systime()){
-                task_resume(auxQueue,&runningTask->awaitingTasksQueue); 
-            } 
-            auxQueue = auxQueueNext;
-        } while (auxQueue != start ); // para que efetue o loop na cabeca da fila tambem
-    }  
+    if (suspendedQueue)
+    {
+        task_t *head = suspendedQueue; // vou usar para nao perder o ponteiro referente a cabeca da pilha
+        task_t *aux = head; // usada para loopar na fila circular
+        task_t *next; // usada como auxiliar para armazenas o proximo elemento, para nao perder o ponteiro referente ao proximo do aux, se removido
+        do
+        {
+            next = aux->next; // guardo em uma auxiliar pois vou dar resume nessa task, senao perderia seu ponteiro
+            if (systime() >= aux->alarmTime) // se estou em um tempo do sistema >= tempo de acordar da tarefa
+            {
+                #ifdef DEBUG
+                printf("PPOS: task_awake() systime(): %d, task %d: has been awaken at %d.\n", systime(), aux->id, aux->sleepingTime);
+                #endif
+                task_resume(aux, &suspendedQueue);
+                head = suspendedQueue; // devo ajustar para a cabeca pois pode ter sido alterada e perderia ponteiro aqui tambem
+            }
+            aux = next; // como armazeno o proximo antes, evito a perda do proximo se eu tiver removido o aux 'anterior'
+        } while (aux != head && suspendedQueue != NULL); // aqui verifico se nao cheguei ao inicio da fila circular ou se a fila de suspensas acabou 
+    }
 }
 // Funcao para escalonamento da tarefa utilizando a politica por prioridades
 task_t *scheduler(){
-    task_t *biggestPriorityTask = (task_t *) readyQueue;
-    int biggestPriorityTaskVal =  biggestPriorityTask->dynamicPriority;
-    task_t *auxQueue = (task_t *) readyQueue; // inicio com a tarefa corrente, para que possa comparar e efetuar a troca de contexto apenas quando a prioridade for 'mais alta'
-    
-    // percorre a fila de tarefas prontas para achar a mais prioritaria, ja as envelhecendo
-    do{ 
-        int currentTaskPrio = auxQueue->dynamicPriority;
+    task_t *biggestPriorityTask;
 
-        if (currentTaskPrio != MAX_PRIORITY){
-            if (currentTaskPrio + TASK_AGING < MAX_PRIORITY){
-                auxQueue->dynamicPriority = MAX_PRIORITY;
-            }
-            else {
-                auxQueue->dynamicPriority = currentTaskPrio + TASK_AGING;
-            }
-        }
+    if (readyQueue){
+        biggestPriorityTask = (task_t *) readyQueue;
+        int biggestPriorityTaskVal =  biggestPriorityTask->dynamicPriority;
+        task_t *auxQueue = (task_t *) readyQueue; // inicio com a tarefa corrente, para que possa comparar e efetuar a troca de contexto apenas quando a prioridade for 'mais alta'
         
-        if (biggestPriorityTaskVal > currentTaskPrio ){ // a comparacao eh maior aqui pois quanto menor o numero da prioridade, mais prioritario eh a tarefa 
-            biggestPriorityTask = auxQueue; 
-            biggestPriorityTaskVal = currentTaskPrio;
-        }
+        // percorre a fila de tarefas prontas para achar a mais prioritaria, ja as envelhecendo
+        do{ 
+            int currentTaskPrio = auxQueue->dynamicPriority;
 
-        auxQueue = auxQueue->next;
-    } while (auxQueue != (task_t *) readyQueue); // para que efetue o aging na cabeca da fila tambem
-    
-    #ifdef DEBUG
-        queue_print("PPOS: scheduler() Queue of ready tasks: ", (queue_t *)readyQueue, print_queue_element); // interessante para ver o funcionamento e task aging das tarefas
-        printf("PPOS: scheduler() Task with biggest priority: %d \n",biggestPriorityTask->id);
-    #endif
+            if (currentTaskPrio != MAX_PRIORITY){
+                if (currentTaskPrio + TASK_AGING < MAX_PRIORITY){
+                    auxQueue->dynamicPriority = MAX_PRIORITY;
+                }
+                else {
+                    auxQueue->dynamicPriority = currentTaskPrio + TASK_AGING;
+                }
+            }
+            
+            if (biggestPriorityTaskVal > currentTaskPrio ){ // a comparacao eh maior aqui pois quanto menor o numero da prioridade, mais prioritario eh a tarefa 
+                biggestPriorityTask = auxQueue; 
+                biggestPriorityTaskVal = currentTaskPrio;
+            }
+
+            auxQueue = auxQueue->next;
+        } while (auxQueue != (task_t *) readyQueue); // para que efetue o aging na cabeca da fila tambem
+        
+        #ifdef DEBUG
+            queue_print("PPOS: scheduler() Queue of ready tasks: ", (queue_t *)readyQueue, print_queue_element); // interessante para ver o funcionamento e task aging das tarefas
+            printf("PPOS: scheduler() Task with biggest priority: %d \n",biggestPriorityTask->id);
+        #endif
+
+    }
     return (task_t *) biggestPriorityTask;
 }
 
@@ -105,7 +118,6 @@ void dispatcher(){
                 break;
             case RUNNING:
             case SUSPENDED:
-                /* code */
                 break;
             default: 
                 break;
@@ -273,9 +285,9 @@ void task_suspend (task_t **queue){
     task_yield(); //  retorna ao dispatcher.
 };
 
-// Suspende tarefa corrente por t segundos
+// Suspende tarefa corrente por t segundos (t ja vem em milisegundos)
 void task_sleep (int t){
-    runningTask->alarmTime = systime() + (t * 1000); // transforma o tempo para milisegundos 
+    runningTask->alarmTime = systime() + t; 
     task_suspend(&suspendedQueue); 
 }
 
