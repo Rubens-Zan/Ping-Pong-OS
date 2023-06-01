@@ -1,0 +1,1 @@
+A chamada de sistema sleep (t) do UNIX suspende um processo por t segundos. O objetivo deste projeto é criar uma função task_sleep, que faz com que a tarefa atual fique suspensa durante o intervalo indicado (tempo em milissegundos), sem perturbar a execução das demais tarefas:
