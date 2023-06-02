@@ -53,9 +53,10 @@ void task_awake(){
 }
 // Funcao para escalonamento da tarefa utilizando a politica por prioridades
 task_t *scheduler(){
-    task_t *biggestPriorityTask;
+    task_t *biggestPriorityTask = NULL;
 
     if (readyQueue){
+
         biggestPriorityTask = (task_t *) readyQueue;
         int biggestPriorityTaskVal =  biggestPriorityTask->dynamicPriority;
         task_t *auxQueue = (task_t *) readyQueue; // inicio com a tarefa corrente, para que possa comparar e efetuar a troca de contexto apenas quando a prioridade for 'mais alta'
@@ -91,13 +92,15 @@ task_t *scheduler(){
 }
 
 void dispatcher(){
+    task_t *nextTask;
+
     while (remainingTasks > 0)
     {
-        task_t *nextTask = scheduler(); 
+        nextTask= scheduler(); 
         task_awake(); // acorda as tarefas cujo tempo de acordar ja chegou ou passou
-
-        if (nextTask != NULL){
-
+        
+        if (nextTask ){
+            
             task_switch(nextTask); 
 
             switch (nextTask->status) 
@@ -140,13 +143,14 @@ void tickHandler(int signum)
 {
     ++runningTask->processorTime;
     ++clockTicks;
+
     // Checa se a tarefa corrente esta no userspace, pois se for tarefa do kernel, nao deve ter controle de preempcao
     if (runningTask->isInUserSpace)
     {
         --quantumTimer;
         
         // Se o quantum da tarefa acabou
-        if (quantumTimer == 0)
+        if (quantumTimer <= 0)
         {
         #ifdef DEBUG
             printf("PPOS: tickHandler() Task %d quantum ended. Resetting the task timer.\n", runningTask->id);
@@ -281,6 +285,7 @@ void task_suspend (task_t **queue){
     runningTask->status = SUSPENDED;  //  ajusta o status da tarefa atual para “suspensa”;
     if (queue != NULL){
         queue_append((queue_t **)queue,(queue_t *) runningTask); // Insere a tarefa atual na fila apontada por queue (se essa fila não for nula);
+
     }
     task_yield(); //  retorna ao dispatcher.
 };
@@ -289,6 +294,7 @@ void task_suspend (task_t **queue){
 void task_sleep (int t){
     runningTask->alarmTime = systime() + t; 
     task_suspend(&suspendedQueue); 
+   
 }
 
 // Tarefa corrente aguarda a tarefa de parametro ser concluida
