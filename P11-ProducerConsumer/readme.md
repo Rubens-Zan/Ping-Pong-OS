@@ -1,0 +1,1 @@
+ Este projeto consiste em usar seu sistema, com as funções de semáforos implementadas no projeto anterior, para construir um sistema produtor/consumidor com buffer limitado. 
