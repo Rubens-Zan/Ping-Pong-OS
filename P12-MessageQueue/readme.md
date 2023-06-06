@@ -1,0 +1,3 @@
+ Uma fila de mensagens é uma estrutura usada pelas tarefas para comunicação através de troca de mensagens de tamanho fixo. Cada fila pode armazenar até N mensagens de tamanho fixo, respeitando uma política de acesso FIFO.
+
+O acesso à fila é bloqueante, ou seja, uma tarefa que tenta enviar uma mensagem a uma fila cheia terá de esperar até que surjam vagas na fila; uma tarefa que deseja receber mensagens de uma fila vazia terá de esperar até que uma mensagem esteja disponível nessa fila. 
