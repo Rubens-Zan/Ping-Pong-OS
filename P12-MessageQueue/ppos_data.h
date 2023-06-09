@@ -42,7 +42,6 @@ typedef struct task_t
   unsigned int activations;
   struct task_t *awaitingTasksQueue; // fila de tarefas esperando que essa tarefa termine para serem acordadas
   unsigned int alarmTime; //  representa o tempo do sistema que essa tarefa deve ser acordada, se suspensa por tempo 
-  // ... (outros campos serão adicionados mais tarde)
 } task_t ;
 
 // estrutura que define um semáforo
@@ -69,7 +68,14 @@ typedef struct
 // estrutura que define uma fila de mensagens
 typedef struct
 {
-  // preencher quando necessário
+  void * buffer; // buffer de mensagens da fila de mensagens 
+  int counter, maxMsgs, lastConsumptionIdx,lastProductionIdx;  // contador de tarefas no buffer, maximo de mensagens e ultimo index de consumo da fila
+  int msgSize; // tamanho da mensagem contida na fila de mensagens
+  short isActive; // representa se a fila de mensagens esta ativa, ou seja nao foi destruido
+  // Semaforo contendo a quantidade de produtos produzidos atualmente na fila, usado para controlar o fluxo de consumidores
+  // Semaforo contendo os espacos de producao, para que sejam controlados os produtores, tal que eles nao produzam mais mensagens do que os slots maximos disponiveis
+  semaphore_t semProducts, semMaxProductions; 
+  // semaphore_t semProducers, semConsumers,
 } mqueue_t ;
 
 #endif
