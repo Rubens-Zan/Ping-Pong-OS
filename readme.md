@@ -5,4 +5,4 @@ O desenvolvimento é incremental, adicionando gradativamente funcionalidades com
 
  A estrutura geral do código a ser desenvolvido é apresentada na figura abaixo. Os arquivos em azul são fixos (fornecidos pelo professor), enquanto os arquivos em verde são desenvolvidos por mim. 
 
-![Alt text](ppos.png)
+![image](https://github.com/Rubens-Zan/Ping-Pong-OS/assets/80857600/d2b7f1f6-596e-4040-b8be-0609b266a438)
