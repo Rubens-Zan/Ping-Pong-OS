@@ -43,8 +43,9 @@ void task_awake(){
             if (systime() >= aux->alarmTime) // se estou em um tempo do sistema >= tempo de acordar da tarefa
             {
                 #ifdef DEBUG
-                printf("PPOS: task_awake() systime(): %d, task %d: has been awaken at %d.\n", systime(), aux->id, aux->sleepingTime);
+                printf("PPOS: task_awake() systime(): %d, task %d: has been awaken at %d.\n", systime(), aux->id, aux->alarmTime);
                 #endif
+                
                 task_resume(aux, &suspendedQueue);
                 head = suspendedQueue; // devo ajustar para a cabeca pois pode ter sido alterada e perderia ponteiro aqui tambem
             }
@@ -193,7 +194,7 @@ void ppos_init (){
     setvbuf (stdout, 0, _IONBF, 0) ; // evitar erros do printf com trocas de contexto
     
     // Inicializacao do contexto da task main
-    if (getcontext(&(mainTask.context)) == -1)
+    if (getcontext(&(mainTask.context)) == ERROR_CODE)
     {
         perror("ERROR: Failed to get context for main task");
         exit(EXIT_FAILURE);
@@ -221,7 +222,7 @@ void ppos_init (){
 
 // Funcoes para lidar com as tarefas
 int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
-    if (getcontext(&(task->context)) == -1){
+    if (getcontext(&(task->context)) == ERROR_CODE){
         perror("ERROR: Failed to get context for task");
         exit(EXIT_FAILURE);
     }
@@ -238,7 +239,7 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
     else
     {
         perror ("Erro na criação da pilha! ") ;
-        return -1; // retorna negativo em caso de erro  
+        return ERROR_CODE; // retorna negativo em caso de erro  
     }
 
     task->status = READY; // atribui status de pronta para executar a tarefa criada
@@ -305,7 +306,7 @@ int task_wait (task_t *task){
     if (task != NULL && task->status != COMPLETED){
         task_suspend( &task->awaitingTasksQueue); 
     }else {
-        return -1; // retorna negativo pois tarefa a ser aguardada nao esta viva
+        return ERROR_CODE; // retorna negativo pois tarefa a ser aguardada nao esta viva
     }
 
     return task->id;
@@ -414,7 +415,7 @@ void leave_cs(int *lock)
 
 int sem_init (semaphore_t *s, int value){
     if (!s){
-        return -1;
+        return ERROR_CODE;
     }
 
     s->counter = value;
@@ -425,16 +426,22 @@ int sem_init (semaphore_t *s, int value){
 
 int sem_down (semaphore_t *s){    
     if(!s->isActive || !s){ // se o semaforo foi destruido ou nao existe retorna erro
-        return -1;
+        return ERROR_CODE;
     }
     enter_cs(&(s->cslock));
-    // s->isActive = 1;
     --s->counter;
     leave_cs(&(s->cslock));
     // a chamada eh bloqueante caso o semaforo seja negativo
     if (s->counter < 0){
-        // printf("suspendendo a tarefa pois contador menor q zero\n");
-        task_suspend(&s->queue); // suspende a tarefa corrente e append na fila do semaforo
+        #ifdef DEBUG
+        printf("PPOS: sem_down() task %d: has been suspended because semaphore counter is negative: %d.\n", runningTask->id, s->counter);
+        #endif
+        
+        task_suspend(&s->queue); // suspende a tarefa corrente e append na fila do semaforo 
+        // como a tarefa foi acordada devido a destruicao do semaforo retorna com codigo de erro
+        if (!s->isActive){ 
+            return ERROR_CODE; 
+        }
     }
 
     return 0;
@@ -442,7 +449,7 @@ int sem_down (semaphore_t *s){
 
 int sem_up (semaphore_t *s){
     if(!s->isActive || !s){ // se o semaforo foi destruido ou nao existe retorna erro
-        return -1;
+        return ERROR_CODE;
     }
     enter_cs(&(s->cslock)); // entra na seção critica ()
     ++s->counter;
@@ -455,11 +462,10 @@ int sem_up (semaphore_t *s){
 
 int sem_destroy (semaphore_t *s){
     if(!s->isActive || !s){
-        return -1; // retorna -1, em caso de erro, quando o semaforo ja foi destruido ou nao existe
+        return ERROR_CODE; // retorna ERROR_CODE, em caso de erro, quando o semaforo ja foi destruido ou nao existe
     }
     enter_cs(&(s->cslock));
     s->isActive = 0; 
-    leave_cs(&(s->cslock));
 
     if (s->queue){ // se tem alguem na fila de aguardando fim dessa tarefa
         task_t *auxQueue = (task_t *) s->queue;
@@ -471,103 +477,101 @@ int sem_destroy (semaphore_t *s){
             auxQueue = auxQueueNext;
         } while (auxQueue != start ); // para que efetue o loop na cabeca da fila tambem
     }   
+    leave_cs(&(s->cslock));
 
     return 0; 
 }
 
 /// Funcoes que lidam com uma fila de mensagens 
-
 int mqueue_init (mqueue_t *queue, int max_msgs, int msg_size){
-    if (sem_init(&queue->semProducts, 0) == -1) // Como nos consumidores devo aguarda que tenham produtos prontos para consumo
-        return -1;
-    // if (sem_init(&queue->semProducers, max_msgs) == -1) // Evita producao desenfreada que nao cabe no estoque
-    //     return -1;
-    // if (sem_init(&queue->semConsumers, max_msgs) == -1) // Evita consumo desenfreado fora do que tem
-    //     return -1;
-    
-    sem_init(&queue->semMaxProductions, max_msgs); 
+    // Inicializacao do semaforo de produtos com 0, pois como controla o fluxo dos consumidores,
+    // estes devem aguardar que haja produtos a serem consumidos para efetuar o consumo
+    if (sem_init(&queue->semProducts, 0) == ERROR_CODE)
+        return ERROR_CODE;
 
-    // printf("iniciei fila com capacidades dos semaforos de %d produtos %d produtores %d consumidores \n", queue->semProducts.counter,queue->semProducers.counter,queue->semConsumers.counter);
+    // Inicializacao do semaforo de espaços de producao com max_msgs, pois como controla o fluxo dos produtores,
+    // estes podem produzir ate max_msgs 
+    if (sem_init(&queue->semProductionsSpots, max_msgs)) // Controla a producao para que esta nao ultrapasse as vagas disponiveis no buffer
+        return ERROR_CODE;
+     
     queue->buffer = malloc(msg_size * max_msgs);
-    queue->lastConsumptionIdx = queue->lastProductionIdx = 0;
+    if (!queue->buffer){
+        perror ("Erro na alocação do buffer! ") ;
+        return ERROR_CODE; // retorna negativo em caso de erro
+    }
+    queue->lastConsumptionIdx = queue->lastProductionIdx = 0; // como uso um buffer circular, isso eh para que seja consumido na sequencia que estou recebendo de fato
+    // variaveis para que o buffer seja generico
     queue->maxMsgs = max_msgs; 
     queue->msgSize = msg_size; 
-    queue->isActive = 1; 
+    queue->isActive = 1; // controla se a fila nao foi destruida
     queue->counter = 0; // contador de tarefas na fila
     return 0;
 }
 
 int mqueue_send (mqueue_t *queue, void *msg){
-    // Decrementar quantidade de vagas do semaforo 
-    if (!queue->isActive)
-        return -1;
+    if (!queue || !queue->isActive )
+        return ERROR_CODE;
 
-    // if (sem_down(&queue->semProducers) == -1)
-    //     return -1;
-    
-    sem_down(&queue->semMaxProductions); // usei um espaco de producao
-
-    if (!queue->isActive || !queue) // se a tarefa foi suspensa, mas o semaforo foi destruido, entao ela acordaria aqui, porem deve morrer  
-        return -1;  
-        
-    // if (queue->semProducts.counter == queue->maxMsgs){
-    //     task_suspend(&queue->semProducts.queue);
-    // } 
-
-    // printf("%d  ",queue->semProducts.counter);
-    
+    // Decrementar quantidade de vagas do semaforo de producoes 
     // como estamos utilizando um semaforo com base nas 'vagas disponiveis' no buffer de mensagens
     // essa funcao vai ser bloqueante no caso de a fila de mensagens estiver cheia
+    // sera acordada quando o semaforo ficar disponivel novamente
+    // ou quando o semaforo for destruido, portanto verifica  se retornou erro dessa funcao
+    if (sem_down(&queue->semProductionsSpots) == ERROR_CODE) 
+        return ERROR_CODE;  
+    
     ++queue->counter; 
     
-    // funcionamento como um buffer circular, o proximo do ultimo disponivel eh o primeiro
-    if (queue->counter == queue->maxMsgs) 
-        queue->counter = 0; 
-    
-    int nextProductionIdx = queue->lastProductionIdx + 1 == queue->maxMsgs ? 0 : queue->lastProductionIdx + 1;  
+    // ternario para garantir circularidade do buffer circular, depois do ultimo index eh o primeiro index
+    int nextProductionIdx = queue->lastProductionIdx + 1 == queue->maxMsgs ? 0 : queue->lastProductionIdx + 1;
     void * nextProduction = queue->buffer + (queue->msgSize * nextProductionIdx);
-    
     memcpy(nextProduction, msg, queue->msgSize);
-    
     queue->lastProductionIdx = nextProductionIdx;
     sem_up(&queue->semProducts); // incremento a quantidade de produtos na fila de mensagens 
-    // sem_up(&queue->semProducers); // incrementa a quantidade de vagas da fila de mensagens
-    // printf("Produzi um produto, resultando em: %d \n",queue->semProducts.counter);
+
+    #ifdef DEBUG
+    printf("PPOS: mqueue_send() Efetuei uma produção, resultando em %d produtos.\n",queue->counter);
+    #endif
+   
     return 0;
 }
 
 int mqueue_recv (mqueue_t *queue, void *msg){
-     // ja decremento aqui a quantidade de produtos na fila
-    sem_down(&queue->semProducts);
-    // sem_down(&queue->semConsumers);      
     if (!queue->isActive || !queue) // se a tarefa foi suspensa, mas o semaforo foi destruido
-        return -1;
-    int nextConsumptionIdx = queue->lastConsumptionIdx + 1 == queue->maxMsgs ? 0 : queue->lastConsumptionIdx + 1;  
+        return ERROR_CODE;
+    // ja decremento aqui a quantidade de produtos na fila
+    // assim como na funcao de producao (send), aqui verifico se foi acordada por causa da destruicao do semaforo de espera, 
+    // isso se essa tarefa tiver sido bloqueada
+    if(sem_down(&queue->semProducts) == ERROR_CODE)
+        return ERROR_CODE;
+
+    --queue->counter; 
+    
+    int nextConsumptionIdx = queue->lastConsumptionIdx + 1 == queue->maxMsgs ? 0 : queue->lastConsumptionIdx + 1; // circularidade do buffer   
     void * nextConsumption = queue->buffer + (queue->msgSize * nextConsumptionIdx);
-    
     memcpy(msg, nextConsumption, queue->msgSize);
-
     queue->lastConsumptionIdx = nextConsumptionIdx; 
+    sem_up(&queue->semProductionsSpots); // pode produzir mais que consumi, ou seja liberei um espaco para producao
     
-    // sem_up(&queue->semConsumers); 
-    sem_up(&queue->semMaxProductions); // pode produzir mais que consumi liberei um espaco para producao
-
+    #ifdef DEBUG
+    printf("PPOS: mqueue_recv() Efetuei um consumo, resultando em %d produtos.\n",queue->counter);
+    #endif
     return 0;
 }
 
 int mqueue_msgs (mqueue_t *queue){
-    if (!queue->isActive)
-        return -1;
-    return queue->semProducts.counter; 
+    if (!queue->isActive || !queue)
+        return ERROR_CODE;
+    return queue->counter; 
 }
 
 int mqueue_destroy (mqueue_t *queue){
-    queue->isActive = 0;
-    // sem_destroy(&queue->semConsumers);
-    // sem_destroy(&queue->semProducers);
-    sem_destroy(&queue->semProducts);
-    sem_destroy(&queue->semMaxProductions);
+    if (!queue || !queue->isActive) // fila de mensagens ja destruida
+        return ERROR_CODE;
 
+    queue->isActive = 0;
+    sem_destroy(&queue->semProducts);
+    sem_destroy(&queue->semProductionsSpots);
     free(queue->buffer);
     return 0;
 }

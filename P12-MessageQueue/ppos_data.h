@@ -20,7 +20,7 @@ typedef enum  {
 } taskStatusT;
 
 // Algumas contanstes definidas para facilitacao de leitura do codigo,debugs e manutencao
-#define DISPATCHER_ID -1 // ID do dispatcher, para facilitar na leitura dos debugs
+#define ERROR_CODE -1 // Codigo de erro, para facilitar na leitura/manutencao
 #define MIN_PRIORITY 20 // Lembrando que nos sistemas Windows eh o inverso, mas estou utilizando o padrao POSIX 
 #define MAX_PRIORITY -20  // e as prioridades vao de -20 a 20 no Posix
 #define TASK_AGING -1 // Fator de envelhecimento das tarefas 
@@ -68,14 +68,16 @@ typedef struct
 // estrutura que define uma fila de mensagens
 typedef struct
 {
-  void * buffer; // buffer de mensagens da fila de mensagens 
-  int counter, maxMsgs, lastConsumptionIdx,lastProductionIdx;  // contador de tarefas no buffer, maximo de mensagens e ultimo index de consumo da fila
-  int msgSize; // tamanho da mensagem contida na fila de mensagens
+  int counter; // contador de tarefas no buffer corrente
+  int maxMsgs; // maximo de mensagens disponiveis no buffer da fila
+  int msgSize; // tamanho da mensagem contida na fila de mensagens, para que o buffer de mensagens seja generico
   short isActive; // representa se a fila de mensagens esta ativa, ou seja nao foi destruido
-  // Semaforo contendo a quantidade de produtos produzidos atualmente na fila, usado para controlar o fluxo de consumidores
-  // Semaforo contendo os espacos de producao, para que sejam controlados os produtores, tal que eles nao produzam mais mensagens do que os slots maximos disponiveis
-  semaphore_t semProducts, semMaxProductions; 
-  // semaphore_t semProducers, semConsumers,
+  semaphore_t semProducts; // Semaforo contendo a quantidade de produtos produzidos atualmente na fila, usado para controlar o fluxo de consumidores
+  semaphore_t semProductionsSpots; // Semaforo contendo os espacos de producao, para que sejam controlados os produtores, tal que eles nao produzam mais mensagens do que os slots maximos disponiveis
+  void * buffer; // buffer de mensagens da fila de mensagens, void * para tipo do buffer de mensagens ser generico 
+  // variaveis auxiliares pois a implementacao eh com um buffer circular
+  int lastConsumptionIdx; // index do ultimo consumo do buffer da fila
+  int lastProductionIdx;  // index da ultima producao do buffer da fila
 } mqueue_t ;
 
 #endif
