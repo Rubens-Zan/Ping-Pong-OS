@@ -295,7 +295,6 @@ void task_suspend (task_t **queue){
 void task_sleep (int t){
     runningTask->alarmTime = systime() + t; 
     task_suspend(&suspendedQueue); 
-   
 }
 
 // Tarefa corrente aguarda a tarefa de parametro ser concluida

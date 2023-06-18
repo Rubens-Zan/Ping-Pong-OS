@@ -10,11 +10,26 @@
 // estruturas de dados e rotinas de inicializacao e acesso
 // a um dispositivo de entrada/saida orientado a blocos,
 // tipicamente um disco rigido.
+typedef enum  {
+  WRITE, 
+  READ
+}requestStatusT;
+
+
+typedef struct request_t {
+	struct request_t *next, *prev;
+	task_t *req; 
+	requestStatusT type;           
+	int block;
+	void *buffer;
+} request_t;
 
 // estrutura que representa um disco no sistema operacional
-typedef struct
-{
-  // completar com os campos necessarios
+
+typedef struct {
+	request_t *request;
+	task_t *queue;
+  semaphore_t sem;
 } disk_t ;
 
 // inicializacao do gerente de disco
