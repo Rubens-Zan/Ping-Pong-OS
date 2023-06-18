@@ -96,9 +96,12 @@ task_t *scheduler(){
 void dispatcher(){
     task_t *nextTask;
 
-    while (remainingTasks > 0)
+    while (remainingTasks > 1)
     {
         nextTask= scheduler(); 
+        if (remainingTasks == 1){
+            printf("falta 1 \n");
+        }
         task_awake(); // acorda as tarefas cujo tempo de acordar ja chegou ou passou
         
         if (nextTask ){

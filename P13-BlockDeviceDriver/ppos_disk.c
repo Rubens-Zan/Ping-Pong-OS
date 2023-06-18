@@ -37,6 +37,15 @@ request_t *request(requestStatusT reqType, void *buf, int block) {
     return req;
 }
 
+void print_queue_element_teste(void *ptr)
+{
+    task_t *task = ptr;
+    printf("{ '%d': { 'D':%d,'S':%d}}", task->id, task->dynamicPriority, task->staticPriority); // D = DYNAMIC, S = STATIC
+    if (task->next != (task_t *) readyQueue){
+        printf(", "); 
+    }
+}
+
 
 void diskDriverBody(void * args) {
     
@@ -63,10 +72,8 @@ void diskDriverBody(void * args) {
             else
                 disk_cmd (DISK_CMD_WRITE, disk.request->block, disk.request->buffer);
             
-            printf("Atendendo ao request %d ",requestsQueue->block);
+            // printf("Atendendo ao request %d ",requestsQueue->block);
             queue_remove((queue_t **)&requestsQueue,(queue_t *)requestsQueue);
-            if( requestsQueue)
-                printf("prox %d \n",requestsQueue->block);
 
         }
         // libera o semáforo de acesso ao disco
