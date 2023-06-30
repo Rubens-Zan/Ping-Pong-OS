@@ -45,7 +45,6 @@ void task_awake(){
                 #ifdef DEBUG
                 printf("PPOS: task_awake() systime(): %d, task %d: has been awaken at %d.\n", systime(), aux->id, aux->alarmTime);
                 #endif
-                
                 task_resume(aux, &suspendedQueue);
                 head = suspendedQueue; // devo ajustar para a cabeca pois pode ter sido alterada e perderia ponteiro aqui tambem
             }
@@ -96,12 +95,9 @@ task_t *scheduler(){
 void dispatcher(){
     task_t *nextTask;
 
-    while (remainingTasks > 1)
+    while (remainingTasks > 0)
     {
         nextTask= scheduler(); 
-        if (remainingTasks == 1){
-            printf("falta 1 \n");
-        }
         task_awake(); // acorda as tarefas cujo tempo de acordar ja chegou ou passou
         
         if (nextTask ){
@@ -246,10 +242,11 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
     }
 
     task->status = READY; // atribui status de pronta para executar a tarefa criada
-    if (taskCounter != 1){ // se a tarefa nao eh o dispatcher
+    if (taskCounter != 1 && taskCounter != 2){ // se a tarefa nao eh o dispatcher nem o gerenciador de disco
         task->dynamicPriority = task->staticPriority = DEFAULT_PRIORITY;
         task->isInUserSpace = 1; // como nao eh o dispatcher esta em tarefa de modo kernel, ou seja, nao preemptiva
         ++remainingTasks; 
+
         queue_append(&readyQueue, (queue_t *) task);  // aqui pode usar a task e fazer o cast pois os primeiros tres campos da estrutura da task sao os mesmo do queue_t    
     } else {
         task->staticPriority = MAX_PRIORITY; // Dispatcher eh o mais prioritario 
@@ -273,13 +270,14 @@ int task_init (task_t *task,void  (*start_func)(void *),void   *arg){
 
 void task_resume (task_t * task, task_t **queue){
     // se a fila queue não for nula, retira a tarefa apontada por task dessa fila;
-    if(queue != NULL)
+    if(queue != NULL){
         queue_remove((queue_t **) queue,(queue_t *)task);
+    }
     
     // ajusta o status dessa tarefa para “pronta”;
     task->status = READY;
     // insere a tarefa na fila de tarefas prontas.
-    queue_append(&readyQueue, (queue_t *) task); 
+    queue_append(&readyQueue, (queue_t *) task);
 };
 
 void task_suspend (task_t **queue){

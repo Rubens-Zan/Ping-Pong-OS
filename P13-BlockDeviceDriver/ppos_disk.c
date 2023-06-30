@@ -8,27 +8,35 @@
 
 extern queue_t *readyQueue;
 extern task_t *runningTask;
-extern task_t *suspendedQueue;
+task_t *suspendedQueueMngDisk;
+
 request_t *requestsQueue; 
 task_t *suspendedDiskReqQueue;
 task_t mngDiskTask;
 disk_t disk;
 int signal_disk;
 struct sigaction action2;
-
+semaphore_t semDiskMgr;
+int diskMgrSuspended; 
 
 void handle_signal () {
     signal_disk = 1;
-    if (mngDiskTask.status == SUSPENDED){
-        task_resume(&mngDiskTask, &suspendedQueue);
+    sem_down(&semDiskMgr);
+
+    if (diskMgrSuspended){
+        task_resume(&mngDiskTask, &suspendedQueueMngDisk);
+        diskMgrSuspended = 0;
     }
+    sem_up(&semDiskMgr);
+
 }
 
 request_t *request(requestStatusT reqType, void *buf, int block) {
     request_t *req = malloc (sizeof (request_t));
     if (!req) return 0;
 
-    req->req = runningTask;
+    req->task = runningTask;
+    req->task->isInUserSpace = 0;
 	req->type = reqType;
 	req->buffer = buf;
 	req->block = block;
@@ -37,26 +45,15 @@ request_t *request(requestStatusT reqType, void *buf, int block) {
     return req;
 }
 
-void print_queue_element_teste(void *ptr)
-{
-    task_t *task = ptr;
-    printf("{ '%d': { 'D':%d,'S':%d}}", task->id, task->dynamicPriority, task->staticPriority); // D = DYNAMIC, S = STATIC
-    if (task->next != (task_t *) readyQueue){
-        printf(", "); 
-    }
-}
-
-
 void diskDriverBody(void * args) {
-    
     while (1) {
         sem_down(&disk.sem);  // obtém o semáforo de acesso ao disco
 
         // se foi acordado devido a um sinal do disco
         if (signal_disk) {
-            task_t *task = disk.request->req;
+            request_t *requestCalled = disk.request;
             // acorda a tarefa cujo pedido foi atendido
-            task_resume((task_t *)task,(task_t**) &suspendedDiskReqQueue );
+            task_resume((task_t *)requestCalled->task,(task_t**) &suspendedDiskReqQueue );
             signal_disk = 0;
         }
         int status_disk = disk_cmd (DISK_CMD_STATUS, 0, 0);
@@ -72,15 +69,16 @@ void diskDriverBody(void * args) {
             else
                 disk_cmd (DISK_CMD_WRITE, disk.request->block, disk.request->buffer);
             
-            // printf("Atendendo ao request %d ",requestsQueue->block);
-            queue_remove((queue_t **)&requestsQueue,(queue_t *)requestsQueue);
-
+            if(queue_remove((queue_t **)&requestsQueue,(queue_t *)disk.request)!= 0 )
+                perror("ERROR: diskDriverBody() Erro ao remover requestsQueue\n");
         }
         // libera o semáforo de acesso ao disco
         sem_up(&disk.sem);  
 
         // suspende a tarefa corrente (retorna ao dispatcher)
-        task_suspend(&suspendedQueue);
+        mngDiskTask.status = SUSPENDED;
+        diskMgrSuspended = 1;
+        task_suspend(&suspendedQueueMngDisk);
     }
 }
 
@@ -91,8 +89,13 @@ int disk_mgr_init (int *numBlocks, int *blockSize) {
     
     signal_disk = 0;
     sem_init(&disk.sem, 1);
+    sem_init(&semDiskMgr, 1);
+    diskMgrSuspended =1;
     task_init(&mngDiskTask, diskDriverBody, NULL);
-
+    mngDiskTask.status = SUSPENDED;
+    queue_append((queue_t **) &suspendedQueueMngDisk, (queue_t *) &mngDiskTask);  // aqui pode usar a task e fazer o cast pois os primeiros tres campos da estrutura da task sao os mesmo do queue_t    
+    mngDiskTask.staticPriority = mngDiskTask.dynamicPriority = MAX_PRIORITY;
+    
     action2.sa_handler = handle_signal;
     sigemptyset (&action2.sa_mask) ;
     action2.sa_flags = 0 ;
@@ -105,17 +108,25 @@ int disk_mgr_init (int *numBlocks, int *blockSize) {
 }
 
 int disk_block_read (int block, void *buf) {
+    
     sem_down(&disk.sem);   // obtém o semáforo de acesso ao disco
     
     request_t *req = request(READ, buf, block); // cria o pedido
     if (!req) return -1;
     // inclui o pedido na fila_disco    
-    queue_append((queue_t **) &requestsQueue, (queue_t *) req);
+    if(queue_append((queue_t **) &requestsQueue, (queue_t *) req) != 0){
+        perror("ERROR: disk_block_read() Erro ao incluir o pedido na fila_disco\n");
+        return -1;
+    }
 
     // acorda o gerente de disco (põe ele na fila de prontas)
-    if (mngDiskTask.status == SUSPENDED){
-        task_resume(&mngDiskTask, &suspendedQueue);
+    sem_down(&semDiskMgr);
+
+    if (diskMgrSuspended){
+        task_resume(&mngDiskTask, &suspendedQueueMngDisk);
+        diskMgrSuspended = 0;
     }
+    sem_up(&semDiskMgr);
 
     sem_up(&disk.sem);    // libera semáforo de acesso ao disco
     
@@ -130,19 +141,25 @@ int disk_block_write (int block, void *buf) {
 
     request_t *req = request(WRITE, buf, block);
     if (!req) return -1;
-    // inclui o pedido na fila_disco    
-    queue_append((queue_t **) &requestsQueue, (queue_t *) req);
+    // inclui o pedido na fila_disco
+    if(queue_append((queue_t **) &requestsQueue, (queue_t *) req)!=0){
+        perror("ERROR: disk_block_write() Erro ao incluir o pedido na fila_disco\n");
+        return -1;
+    }
 
     // acorda o gerente de disco (põe ele na fila de prontas)
-    if (mngDiskTask.status == SUSPENDED){
-        task_resume(&mngDiskTask, &suspendedQueue);
+    sem_down(&semDiskMgr);
+
+    if (diskMgrSuspended){
+        task_resume(&mngDiskTask, &suspendedQueueMngDisk);
+        diskMgrSuspended = 0;
     }
+    sem_up(&semDiskMgr);
 
     sem_up(&disk.sem);    // libera semáforo de acesso ao disco
     
     // suspende a tarefa corrente (retorna ao dispatcher)
     task_suspend(&suspendedDiskReqQueue);
-
     return 0;
 }
 

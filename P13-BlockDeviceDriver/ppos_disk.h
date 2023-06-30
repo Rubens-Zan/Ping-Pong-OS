@@ -18,7 +18,7 @@ typedef enum  {
 
 typedef struct request_t {
 	struct request_t *next, *prev;
-	task_t *req; 
+	task_t *task; 
 	requestStatusT type;           
 	int block;
 	void *buffer;
@@ -28,6 +28,7 @@ typedef struct request_t {
 
 typedef struct {
 	request_t *request;
+	request_t *requests_q;
 	task_t *queue;
   semaphore_t sem;
 } disk_t ;

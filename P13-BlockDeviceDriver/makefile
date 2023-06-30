@@ -32,4 +32,4 @@ clean :
 	$(RM) *.o
 
 purge : clean
-	$(RM) pingpong-disco1 pingpong-disco2
+	$(RM) pingpong-disco1 pingpong-disco2 *.log

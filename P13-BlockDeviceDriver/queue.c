@@ -69,7 +69,7 @@ int queue_append (queue_t **queue, queue_t *elem){
     
     // - o elemento nao deve estar em outra fila
     if (elem->prev != NULL || elem->next != NULL){ 
-        fprintf(stderr, "ERRO: ELemento faz parte de outra fila!\n"); 
+        fprintf(stderr, "ERRO: Elemento faz parte de outra fila!\n"); 
         return -3;
     }
 
